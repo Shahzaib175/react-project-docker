@@ -1,28 +1,62 @@
-name: React App CI
+name: DevSecOps CI/CD Pipeline
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 jobs:
-  build:
+  build-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+    - name: SonarQube Scan
+      run: |
+        sonar-scanner \
+          -Dsonar.projectKey=react-app \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+          -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-      - name: Install dependencies
-        run: npm install
+    - name: Build Docker image
+      run: docker build -t react-app:latest ./app
 
-      - name: Build React app
-        run: npm run build
+    - name: Trivy scan
+      run: trivy image react-app:latest
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Login to ECR
+      id: ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Push Docker image to ECR
+      env:
+        ECR_REPOSITORY: react-app
+      run: |
+        docker tag react-app:latest ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+        docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+
+    - name: Deploy to ECS
+      run: |
+        aws ecs update-service \
+          --cluster react-cluster \
+          --service react-service \
+          --force-new-deployment \
+          --region us-east-1
+
+    - name: Send SNS Email
+      run: |
+        aws sns publish \
+          --topic-arn arn:aws:sns:us-east-1:${{ secrets.AWS_ACCOUNT_ID }}:deploy-alerts \
+          --subject "🚀 New Deployment Completed" \
+          --message "Latest code deployed successfully to ECS."
+
