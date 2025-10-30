@@ -10,9 +10,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    # -------------------------------
+    # 1. Checkout Code
+    # -------------------------------
+    - name: Checkout Code
       uses: actions/checkout@v3
 
+    # -------------------------------
+    # 2. Install Sonar Scanner
+    # -------------------------------
+    - name: Install Sonar Scanner
+      run: |
+        wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+        unzip sonar-scanner-cli-5.0.1.3006-linux.zip
+        sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
+        sudo ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner
+
+    # -------------------------------
+    # 3. SonarQube Static Code Scan
+    # -------------------------------
     - name: SonarQube Scan
       run: |
         sonar-scanner \
@@ -21,30 +37,56 @@ jobs:
           -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
           -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-    - name: Build Docker image
+    # -------------------------------
+    # 4. Build Docker Image
+    # -------------------------------
+    - name: Build Docker Image
       run: docker build -t react-app:latest ./app
 
-    - name: Trivy scan
+    # -------------------------------
+    # 5. Trivy Image Security Scan
+    # -------------------------------
+    - name: Install Trivy
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install -y trivy
+    - name: Run Trivy Scan
       run: trivy image react-app:latest
 
-    - name: Configure AWS credentials
+    # -------------------------------
+    # 6. Configure AWS Credentials
+    # -------------------------------
+    - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
-    - name: Login to ECR
+    # -------------------------------
+    # 7. Login to Amazon ECR
+    # -------------------------------
+    - name: Login to Amazon ECR
       id: ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Push Docker image to ECR
+    # -------------------------------
+    # 8. Push Docker Image to ECR
+    # -------------------------------
+    - name: Push Docker Image to ECR
       env:
         ECR_REPOSITORY: react-app
       run: |
         docker tag react-app:latest ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
         docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
+    # -------------------------------
+    # 9. Deploy to ECS (Force New Deployment)
+    # -------------------------------
     - name: Deploy to ECS
       run: |
         aws ecs update-service \
@@ -53,10 +95,13 @@ jobs:
           --force-new-deployment \
           --region us-east-1
 
+    # -------------------------------
+    # 10. Send SNS Email Notification
+    # -------------------------------
     - name: Send SNS Email
       run: |
         aws sns publish \
           --topic-arn arn:aws:sns:us-east-1:${{ secrets.AWS_ACCOUNT_ID }}:deploy-alerts \
-          --subject "🚀 New Deployment Completed" \
-          --message "Latest code deployed successfully to ECS."
+          --subject "🚀 New Code Deployed to ECS" \
+          --message "The latest code from commit ${{ github.sha }} has been successfully scanned, built, and deployed to ECS."
 
