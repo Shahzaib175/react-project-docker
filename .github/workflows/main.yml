@@ -13,13 +13,21 @@ jobs:
     - name: 🧬 Checkout code
       uses: actions/checkout@v3
 
-    - name: 🧠 SonarQube Scan
+    - name: 🧠 Install SonarQube Scanner
+      run: |
+        wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+        unzip sonar-scanner-cli-5.0.1.3006-linux.zip
+        sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
+        sudo ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner
+
+    - name: 🧪 SonarQube Scan
       run: |
         sonar-scanner \
           -Dsonar.projectKey=react-app \
           -Dsonar.sources=. \
           -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
           -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
 
     - name: 🐳 Build Docker image
       run: docker build -t react-app:latest .
