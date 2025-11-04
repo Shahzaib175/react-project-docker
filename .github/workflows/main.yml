@@ -72,3 +72,4 @@ jobs:
           --subject "🚀 New Deployment Completed" \
           --message "The latest version of the React app has been deployed successfully to ECS Fargate."
 
+####
