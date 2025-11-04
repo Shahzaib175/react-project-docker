@@ -35,7 +35,8 @@ jobs:
     - name: 🕵️ Trivy Scan
       run: |
         curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
-        sudo mv ./trivy /usr/local/bin/trivy
+        sudo mv ./bin/trivy /usr/local/bin/trivy
+        trivy --version  # Optional: to verify installation
         trivy image react-app:latest
 
     - name: 🔐 Configure AWS Credentials
